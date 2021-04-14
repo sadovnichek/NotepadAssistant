@@ -3,7 +3,6 @@ using System.Windows;
 using System.Speech.Synthesis;
 using System.Windows.Automation;
 using System.Windows.Threading;
-using System.Linq;
 
 namespace UserApp
 {
@@ -17,12 +16,10 @@ namespace UserApp
         private string fromCursorOldText;
         private string fromFocusOldText;
         private System.Windows.Media.Brush StartButtonColor;
-        private AutomationElement[] menuElements;
 
         public MainWindow()
         {
             InitializeComponent();
-            menuElements = new AutomationElement[100];
             speech = new SpeechSynthesizer();
             timer = new DispatcherTimer();
             timer.Tick += new EventHandler(timer_Tick);
@@ -31,7 +28,7 @@ namespace UserApp
 
         private void AddElement(AutomationElement element, ref string oldText)
         {
-            if (oldText != element.Current.Name && menuElements.Contains(element))
+            if (oldText != element.Current.Name && element.Current.ControlType == ControlType.MenuItem)
             {
                 TextBox.Items.Add(element.Current.Name);
                 speech.Speak(element.Current.Name);
@@ -43,8 +40,13 @@ namespace UserApp
         {
             var fromCursor = ElementFromCursor();
             var fromFocus = AutomationElement.FocusedElement;
-            AddElement(fromCursor, ref fromCursorOldText);
-            AddElement(fromFocus, ref fromFocusOldText);
+            if (fromCursor.Current.Name == fromFocus.Current.Name)
+                AddElement(fromFocus, ref fromFocusOldText);
+            else
+            {
+                AddElement(fromCursor, ref fromCursorOldText);
+                AddElement(fromFocus, ref fromFocusOldText);
+            }
         }
 
         private void ButtonStart_Click(object sender, RoutedEventArgs e)
@@ -70,9 +72,6 @@ namespace UserApp
                 var appElement = rootElement.FindFirst(TreeScope.Children, findNotepad);
                 if (appElement != null)
                 {
-                    System.Windows.Automation.Condition findMenubar = new PropertyCondition(AutomationElement.AutomationIdProperty, "MenuBar");
-                    var menuBar = appElement.FindFirst(TreeScope.Children, findMenubar);
-                    menuBar.FindAll(TreeScope.Descendants, System.Windows.Automation.Condition.TrueCondition).CopyTo(menuElements, 0);
                     timer.Start();
                 }
                 else
