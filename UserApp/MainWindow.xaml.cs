@@ -1,9 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Windows;
 using System.Speech.Synthesis;
 using System.Windows.Automation;
 using System.Windows.Threading;
+using System.Linq;
 
 namespace UserApp
 {
@@ -14,72 +14,51 @@ namespace UserApp
     {
         readonly SpeechSynthesizer speech;
         readonly DispatcherTimer timer;
-        private string fromCursorOld;
-        private string fromFocusOld;
-        private System.Windows.Media.Brush color;
-        private AutomationElement appElement;
-        private List<string> exceptions;
-        private bool IsNotepadOpened;
+        private string fromCursorOldText;
+        private string fromFocusOldText;
+        private System.Windows.Media.Brush StartButtonColor;
+        private AutomationElement[] menuElements;
 
         public MainWindow()
         {
             InitializeComponent();
-            exceptions = new List<string>() { "Свернуть", "Развернуть", "Закрыть", "Start", "Текстовый редактор", "", "Безымянный – Блокнот" };
+            menuElements = new AutomationElement[100];
             speech = new SpeechSynthesizer();
             timer = new DispatcherTimer();
             timer.Tick += new EventHandler(timer_Tick);
             timer.Interval = new TimeSpan(0, 0, 1);
         }
 
+        private void AddElement(AutomationElement element, ref string oldText)
+        {
+            if (oldText != element.Current.Name && menuElements.Contains(element))
+            {
+                TextBox.Items.Add(element.Current.Name);
+                speech.Speak(element.Current.Name);
+                oldText = element.Current.Name;
+            }
+        }
+
         private void timer_Tick(object sender, EventArgs e)
         {
-            string fromCursor = "";
-            if (ElementFromCursor() != null)
-            {
-                fromCursor = ElementFromCursor().Current.Name;
-            }
-            var fromFocus = AutomationElement.FocusedElement.Current.Name;
-            if (fromCursorOld != fromCursor && IsNotepadOpened && !exceptions.Contains(fromCursor))
-            {
-                TextBox.Items.Add(fromCursor);
-                speech.Speak(fromCursor);
-                fromCursorOld = fromCursor;
-            }
-            if (fromFocusOld != fromFocus && IsNotepadOpened && !exceptions.Contains(fromFocus))
-            {
-                TextBox.Items.Add(fromFocus);
-                speech.Speak(fromFocus);
-                fromFocusOld = fromFocus;
-            }
+            var fromCursor = ElementFromCursor();
+            var fromFocus = AutomationElement.FocusedElement;
+            AddElement(fromCursor, ref fromCursorOldText);
+            AddElement(fromFocus, ref fromFocusOldText);
         }
 
         private void ButtonStart_Click(object sender, RoutedEventArgs e)
         {
-            color = ButtonStart.Background;
+            StartButtonColor = ButtonStart.Background;
             ButtonStart.Background = System.Windows.Media.Brushes.Green;
             Automate();
         }
 
         private AutomationElement ElementFromCursor()
         {
-            Rect rectangle;
-            try
-            {
-                rectangle = appElement.Current.BoundingRectangle;
-            }
-            catch (ElementNotAvailableException)
-            {
-                IsNotepadOpened = false;
-                return null; 
-            }
             var x = System.Windows.Forms.Cursor.Position.X;
             var y = System.Windows.Forms.Cursor.Position.Y;
-            if (x > rectangle.X && x < rectangle.Right && y > rectangle.Top && y < rectangle.Bottom)
-            {
-                System.Windows.Point point = new System.Windows.Point(x, y);
-                return AutomationElement.FromPoint(point);
-            }
-            return null;
+            return AutomationElement.FromPoint(new System.Windows.Point(x, y));
         }
 
         private void Automate()
@@ -87,17 +66,19 @@ namespace UserApp
             AutomationElement rootElement = AutomationElement.RootElement;
             if (rootElement != null)
             {
-                System.Windows.Automation.Condition condition = new PropertyCondition(AutomationElement.NameProperty, "Безымянный – Блокнот");
-                appElement = rootElement.FindFirst(TreeScope.Children, condition);
+                System.Windows.Automation.Condition findNotepad = new PropertyCondition(AutomationElement.NameProperty, "Безымянный – Блокнот");
+                var appElement = rootElement.FindFirst(TreeScope.Children, findNotepad);
                 if (appElement != null)
                 {
-                    IsNotepadOpened = true;
+                    System.Windows.Automation.Condition findMenubar = new PropertyCondition(AutomationElement.AutomationIdProperty, "MenuBar");
+                    var menuBar = appElement.FindFirst(TreeScope.Children, findMenubar);
+                    menuBar.FindAll(TreeScope.Descendants, System.Windows.Automation.Condition.TrueCondition).CopyTo(menuElements, 0);
                     timer.Start();
                 }
                 else
                 {
-                    MessageBox.Show("Запустите Блокнот", "error");
-                    ButtonStart.Background = color;
+                    MessageBox.Show("Запустите Блокнот", "Error");
+                    ButtonStart.Background = StartButtonColor;
                 }
             }
         }
